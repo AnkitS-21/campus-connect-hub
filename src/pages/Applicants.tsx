@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Application, Company, Profile } from '@/types/database';
 import { 
@@ -16,12 +17,14 @@ import {
   Mail,
   Phone,
   FileText,
-  ExternalLink,
   Loader2,
-  Users
+  Users,
+  FileSpreadsheet,
+  ChevronDown
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
+import * as XLSX from 'xlsx';
 
 const Applicants = () => {
   const { user, role, loading: authLoading } = useAuth();
@@ -107,6 +110,22 @@ const Applicants = () => {
     setUpdatingStatus(null);
   };
 
+  const getExportData = () => {
+    return applicants.map(app => ({
+      'Name': app.profile.full_name || '',
+      'Roll No': app.profile.roll_no || '',
+      'Email': app.profile.email || '',
+      'Phone': app.profile.phone || '',
+      'CPI': app.profile.cpi || '',
+      'Branch': app.profile.branch || '',
+      'Minor': app.profile.minor || '',
+      'Graduation Year': app.profile.graduation_year || '',
+      'Resume Link': app.profile.resume_link || '',
+      'Status': app.status,
+      'Applied At': format(new Date(app.applied_at), 'yyyy-MM-dd HH:mm')
+    }));
+  };
+
   const exportToCSV = () => {
     if (applicants.length === 0) {
       toast.error('No applicants to export');
@@ -114,25 +133,9 @@ const Applicants = () => {
     }
 
     const company = companies.find(c => c.id === selectedCompany);
-    const headers = ['Name', 'Roll No', 'Email', 'Phone', 'CPI', 'Branch', 'Minor', 'Graduation Year', 'Resume', 'Status', 'Applied At'];
-    
-    const rows = applicants.map(app => [
-      app.profile.full_name || '',
-      app.profile.roll_no || '',
-      app.profile.email || '',
-      app.profile.phone || '',
-      app.profile.cpi?.toString() || '',
-      app.profile.branch || '',
-      app.profile.minor || '',
-      app.profile.graduation_year?.toString() || '',
-      app.profile.resume_link || '',
-      app.status,
-      format(new Date(app.applied_at), 'yyyy-MM-dd HH:mm')
-    ]);
-
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(cell => `"${cell}"`).join(','))
-      .join('\n');
+    const data = getExportData();
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const csvContent = XLSX.utils.sheet_to_csv(worksheet);
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
@@ -141,6 +144,27 @@ const Applicants = () => {
     link.click();
 
     toast.success('CSV exported successfully');
+  };
+
+  const exportToExcel = () => {
+    if (applicants.length === 0) {
+      toast.error('No applicants to export');
+      return;
+    }
+
+    const company = companies.find(c => c.id === selectedCompany);
+    const data = getExportData();
+    
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Applicants');
+    
+    // Auto-size columns
+    const colWidths = Object.keys(data[0] || {}).map(key => ({ wch: Math.max(key.length, 15) }));
+    worksheet['!cols'] = colWidths;
+
+    XLSX.writeFile(workbook, `${company?.name || 'applicants'}_${format(new Date(), 'yyyy-MM-dd')}.xlsx`);
+    toast.success('Excel file exported successfully');
   };
 
   const statusOptions = [
@@ -184,10 +208,25 @@ const Applicants = () => {
               </SelectContent>
             </Select>
             {selectedCompany && applicants.length > 0 && (
-              <Button onClick={exportToCSV}>
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button>
+                    <Download className="h-4 w-4 mr-2" />
+                    Export
+                    <ChevronDown className="h-4 w-4 ml-2" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportToCSV}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Export as CSV
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={exportToExcel}>
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    Export as Excel (.xlsx)
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         </div>
